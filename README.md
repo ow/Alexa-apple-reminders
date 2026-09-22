@@ -1,7 +1,13 @@
-# alexa-sync
+# Alexa x Apple Reminders Sync
 
-Two-way sync between your Alexa shopping list and a list in Apple Reminders, on macOS.
+Alexa is a terrible shopping list manager. Despite it being a core workflow, actually browsing the shopping list is poorly implemented in their app, and often forgets what it's doing when you are standing in the store. I wanted to be able to ask my Alexa at home to add items to the list, but not be forced to use Alexa's terrible mobile app when I am shopping. 
 
+This tool lets you use your Alexa devices to add/remove shopping items, but then use Apple Reminders on your phone/macOS to interact with that list. The tool runs in the background on a Mac, checking every 2 minutes for new items and syncs them in both directions.
+
+> [!NOTE]  
+> This tool needs to run on an always-on Mac to work, as it interacts with Alexa's shopping list via API calls, but then needs direct Reminders CLI access to add/remove/edit items.
+
+# How it works
 Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a minute or two later. Tick it off in Reminders at the store and it's ticked off on Alexa too. Add something new via Siri to Reminders, and it appears in Alexa. 
 
 > **Unofficial.** Amazon has no public API for the shopping list anymore, so this uses the same private endpoints as the Alexa app. It can break whenever Amazon changes them. Use at your own risk.
