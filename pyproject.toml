@@ -1,6 +1,6 @@
 [project]
 name = "alexa-sync"
-version = "0.1.0"
+version = "0.1.1"
 description = "Two-way sync between the Alexa shopping list and Apple Reminders"
 readme = "README.md"
 authors = [
