@@ -2,7 +2,7 @@
 
 Two-way sync between your Alexa shopping list and a list in Apple Reminders, on macOS.
 
-Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a minute or two later. Tick it off in Reminders at the store and it's ticked off on Alexa too.
+Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a minute or two later. Tick it off in Reminders at the store and it's ticked off on Alexa too. Add something new via Siri to Reminders, and it appears in Alexa. 
 
 > **Unofficial.** Amazon has no public API for the shopping list anymore, so this uses the same private endpoints as the Alexa app. It can break whenever Amazon changes them. Use at your own risk.
 
@@ -10,12 +10,14 @@ Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a min
 
 - macOS 14+
 - [uv](https://docs.astral.sh/uv/) (or pipx)
-- [`remindctl`](https://github.com/openclaw/remindctl): `brew install steipete/tap/remindctl`, then `remindctl authorize`
+- The Reminders CLI tool: [`remindctl`](https://github.com/openclaw/remindctl): `brew install steipete/tap/remindctl`, then `remindctl authorize`
 - An Amazon account with **2-Step Verification using an authenticator app** (the login flow needs a code, not an SMS or push approval)
 
 ## Setup
 
 ```sh
+brew install steipete/tap/remindctl
+remindctl authorize #Prompts for macOS Reminders access
 uv tool install alexa-sync   # or: pipx install alexa-sync
 
 alexa-sync login                     # email, password, authenticator code (one time)
@@ -30,7 +32,7 @@ Other commands: `alexa-sync run` (sync once), `alexa-sync uninstall` (stop the b
 
 ## How it works
 
-**Amazon login.** `login` registers your Mac as a device on your Amazon account, the same way the Alexa phone app does (via [aioamazondevices](https://github.com/chemelli74/aioamazondevices)). That returns a long-lived token, which is kept in your macOS Keychain. Your password and 2FA code are not stored. The token is used to get fresh session cookies whenever needed. If it ever stops working you'll get a macOS notification asking you to run `alexa-sync login` again. To revoke it, remove the device under *Manage Your Content and Devices* on Amazon.
+**Amazon login.** `login` registers your Mac as a "device" on your Amazon account, the same way the Alexa phone app does (via [aioamazondevices](https://github.com/chemelli74/aioamazondevices)). That returns a long-lived token, which is kept in your macOS Keychain. **Your password and 2FA code are not stored or read.** The token is used to get fresh session cookies whenever needed. If it ever stops working you'll get a macOS notification asking you to run `alexa-sync login` again. To revoke it, remove the device under *Manage Your Content and Devices* on Amazon.
 
 **Sync.** Each run reads both lists and compares them with what they looked like after the last sync, so it can tell which side changed:
 
@@ -49,7 +51,7 @@ Other commands: `alexa-sync run` (sync once), `alexa-sync uninstall` (stop the b
 | Log | `~/Library/Logs/alexa-sync.log` |
 | Background job | `~/Library/LaunchAgents/io.github.alexa-sync.plist` |
 
-Only the default Alexa shopping list is synced. It has been tested with amazon.com; other Amazon regions should work, since the login library supports them, but are untested.
+Only the default Alexa shopping list is synced. It has been tested with amazon.com, which seems to be where grocery lists are published regardless of location—it shows there for me despite being in Canada. Other Amazon regions should work, since the login library supports them, but are untested.
 
 ## Development
 
