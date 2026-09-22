@@ -22,6 +22,9 @@ Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a min
 
 ## Setup
 
+> [!TIP]
+> **Your credentials stay on your Mac.** Your Amazon password and 2FA code are only used once during `alexa-sync login` and are never saved. What's kept is a device token (like the one the Alexa app gets), stored securely in your macOS Keychain. Nothing is sent anywhere except Amazon. You can revoke access anytime by removing the device under *Manage Your Content and Devices* on Amazon.
+
 ```sh
 brew install steipete/tap/remindctl
 remindctl authorize #Prompts for macOS Reminders access
@@ -39,7 +42,7 @@ Other commands: `alexa-sync run` (sync once), `alexa-sync uninstall` (stop the b
 
 ## How it works
 
-**Amazon login.** `login` registers your Mac as a "device" on your Amazon account, the same way the Alexa phone app does (via [aioamazondevices](https://github.com/chemelli74/aioamazondevices)). That returns a long-lived token, which is kept in your macOS Keychain. **Your password and 2FA code are not stored or read.** The token is used to get fresh session cookies whenever needed. If it ever stops working you'll get a macOS notification asking you to run `alexa-sync login` again. To revoke it, remove the device under *Manage Your Content and Devices* on Amazon.
+**Amazon login.** `login` registers your Mac as a "device" on your Amazon account, the same way the Alexa phone app does (via [aioamazondevices](https://github.com/chemelli74/aioamazondevices)). That returns a long-lived token, which is kept in your macOS Keychain. **Your password and 2FA code are only used once to sign in and are never stored.** The token is used to get fresh session cookies whenever needed. If it ever stops working you'll get a macOS notification asking you to run `alexa-sync login` again. To revoke it, remove the device under *Manage Your Content and Devices* on Amazon.
 
 **Sync.** Each run reads both lists and compares them with what they looked like after the last sync, so it can tell which side changed:
 
