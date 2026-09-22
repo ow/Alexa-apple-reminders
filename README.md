@@ -16,7 +16,7 @@ Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a min
 ## Setup
 
 ```sh
-uv tool install git+https://github.com/ow/Alexa-apple-reminders
+uv tool install alexa-sync   # or: pipx install alexa-sync
 
 alexa-sync login                     # email, password, authenticator code (one time)
 alexa-sync doctor --list Groceries   # check everything is ready
