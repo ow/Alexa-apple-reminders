@@ -191,8 +191,21 @@ class AlexaSide:
         self._versions.pop(item_id, None)
 
 
+class LoginFailed(Exception):
+    pass
+
+
 async def interactive_login(email: str, password: str, otp: str, data_dir: str) -> dict[str, Any]:
     async with ClientSession() as session:
         api = make_api(session, email, password, None, data_dir)
-        return await api.login.login_mode_interactive(otp)
+        try:
+            return await api.login.login_mode_interactive(otp)
+        except CannotAuthenticate as exc:
+            if "OTP code not found" in str(exc):
+                raise LoginFailed(
+                    "Amazon didn't ask for a 2-Step Verification code. alexa-sync requires 2SV with an "
+                    "authenticator app: enable it under Your Account > Login & security, then try again. "
+                    "(It can also mean the password was wrong or Amazon showed a CAPTCHA.)"
+                ) from exc
+            raise LoginFailed(f"Amazon rejected the login ({exc}). Check the password and code, then retry.") from exc
 

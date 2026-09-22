@@ -18,8 +18,8 @@ from pathlib import Path
 
 import keyring
 
-from . import amazon
-from .reminders import RemindersSide
+from . import __version__, amazon
+from .reminders import RemindersSide, RemindersUnavailable, check_access
 from .sync import Pair, TooManyDeletes, sync
 
 log = logging.getLogger("alexa_sync")
@@ -30,8 +30,10 @@ LOCK_FILE = DATA_DIR / "run.lock"
 LOG_FILE = Path.home() / "Library/Logs/alexa-sync.log"
 KEYCHAIN_SERVICE = "alexa-sync"
 KEYCHAIN_ACCOUNT = "amazon-device"
-AGENT_LABEL = "ms.willia.alexa-sync"
-AGENT_PLIST = Path.home() / f"Library/LaunchAgents/{AGENT_LABEL}.plist"
+AGENT_LABEL = "io.github.alexa-sync"
+LEGACY_AGENT_LABELS = ["ms.willia.alexa-sync"]
+LAUNCH_AGENTS = Path.home() / "Library/LaunchAgents"
+AGENT_PLIST = LAUNCH_AGENTS / f"{AGENT_LABEL}.plist"
 ALERT_EVERY = 6 * 3600
 
 
@@ -77,8 +79,12 @@ def alert(state: dict, key: str, message: str) -> None:
 def cmd_login(args: argparse.Namespace) -> int:
     email = args.email or input("Amazon email: ").strip()
     password = getpass.getpass("Amazon password: ")
-    otp = input("2FA code from your authenticator: ").strip()
-    login_data = asyncio.run(amazon.interactive_login(email, password, otp, str(DATA_DIR)))
+    otp = input("2-Step Verification code from your authenticator app: ").strip()
+    try:
+        login_data = asyncio.run(amazon.interactive_login(email, password, otp, str(DATA_DIR)))
+    except amazon.LoginFailed as exc:
+        print(f"Login failed: {exc}", file=sys.stderr)
+        return 1
     save_credentials(email, login_data)
     print("Logged in. Device registration saved to Keychain (password and code were not stored).")
     return 0
@@ -128,11 +134,12 @@ def _run(args: argparse.Namespace, state: dict) -> int:
         alert(state, "auth", "Not logged in to Amazon. Run: alexa-sync login")
         return 2
 
-    reminders = RemindersSide(args.list)
     try:
+        check_access()
+        reminders = RemindersSide(args.list)
         state["reminders_list_id"] = reminders.resolve(state.get("reminders_list_id"))
-    except RuntimeError as exc:
-        alert(state, "list", str(exc))
+    except (RemindersUnavailable, RuntimeError) as exc:
+        alert(state, "reminders", str(exc))
         return 2
 
     with asyncio.Runner() as runner:
@@ -173,9 +180,46 @@ async def _make_session():
     return ClientSession()
 
 
+def _checks(list_name: str) -> list[tuple[str, str | None]]:
+    """(description, problem or None) for everything a background run needs."""
+    results: list[tuple[str, str | None]] = []
+    try:
+        check_access()
+        results.append(("remindctl installed with Reminders access", None))
+        try:
+            RemindersSide(list_name).resolve(load_state().get("reminders_list_id"))
+            results.append((f"Reminders list {list_name!r} found", None))
+        except RuntimeError as exc:
+            results.append((f"Reminders list {list_name!r} found", str(exc)))
+    except RemindersUnavailable as exc:
+        results.append(("remindctl installed with Reminders access", str(exc)))
+    results.append(("logged in to Amazon", None if load_credentials() else "run: alexa-sync login"))
+    return results
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    results = _checks(args.list)
+    for what, problem in results:
+        print(f"{'✗' if problem else '✓'} {what}" + (f": {problem}" if problem else ""))
+    print(f"{'✓' if AGENT_PLIST.exists() else '·'} background job {'installed' if AGENT_PLIST.exists() else 'not installed'}")
+    return 1 if any(p for _, p in results) else 0
+
+
+def _bootout_all() -> None:
+    uid = os.getuid()
+    for label in [AGENT_LABEL, *LEGACY_AGENT_LABELS]:
+        subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"], capture_output=True)
+        (LAUNCH_AGENTS / f"{label}.plist").unlink(missing_ok=True)
+
+
 def cmd_install(args: argparse.Namespace) -> int:
-    exe = shutil.which("alexa-sync") or sys.argv[0]
-    exe = str(Path(exe).resolve())
+    problems = [f"{what}: {p}" for what, p in _checks(args.list) if p]
+    if problems:
+        print("Not installing; fix these first:\n  " + "\n  ".join(problems), file=sys.stderr)
+        return 1
+    # Keep the PATH entry (e.g. ~/.local/bin/alexa-sync from `uv tool install`)
+    # rather than resolving symlinks, so upgrades don't break the job.
+    exe = str(Path(shutil.which("alexa-sync") or sys.argv[0]).absolute())
     AGENT_PLIST.parent.mkdir(parents=True, exist_ok=True)
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     plist = {
@@ -187,24 +231,23 @@ def cmd_install(args: argparse.Namespace) -> int:
         "StandardErrorPath": str(LOG_FILE),
         "EnvironmentVariables": {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"},
     }
-    uid = os.getuid()
-    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{AGENT_LABEL}"], capture_output=True)
+    _bootout_all()
     AGENT_PLIST.write_bytes(plistlib.dumps(plist))
-    subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(AGENT_PLIST)], check=True)
+    subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(AGENT_PLIST)], check=True)
     print(f"Installed {AGENT_PLIST} (every {args.interval}s). Logs: {LOG_FILE}")
     return 0
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
-    subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{AGENT_LABEL}"], capture_output=True)
-    AGENT_PLIST.unlink(missing_ok=True)
-    print("Uninstalled.")
+    _bootout_all()
+    print("Uninstalled. Login stays in Keychain and sync state in", DATA_DIR)
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="alexa-sync", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("login", help="register this Mac with Amazon (one time)")
@@ -225,7 +268,13 @@ def main() -> int:
     p = sub.add_parser("uninstall", help="remove the launchd job")
     p.set_defaults(fn=cmd_uninstall)
 
+    p = sub.add_parser("doctor", help="check that everything needed is set up")
+    p.add_argument("--list", default="Groceries")
+    p.set_defaults(fn=cmd_doctor)
+
     args = parser.parse_args()
+    if sys.platform != "darwin":
+        parser.exit(1, "alexa-sync only runs on macOS (it needs Apple Reminders).\n")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

@@ -5,8 +5,34 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from pathlib import Path
 
 from .sync import Item
+
+INSTALL_HINT = "install it with: brew install steipete/tap/remindctl"
+
+
+class RemindersUnavailable(Exception):
+    pass
+
+
+def find_remindctl() -> str:
+    # launchd jobs get a minimal PATH, so also look in both Homebrew prefixes.
+    for candidate in (shutil.which("remindctl"), "/opt/homebrew/bin/remindctl", "/usr/local/bin/remindctl"):
+        if candidate and Path(candidate).exists():
+            return candidate
+    raise RemindersUnavailable(f"remindctl not found; {INSTALL_HINT}")
+
+
+def check_access() -> None:
+    """Raise RemindersUnavailable with a fix-it message if we can't use Reminders."""
+    proc = subprocess.run([find_remindctl(), "status", "--json"], capture_output=True, text=True, timeout=30)
+    try:
+        authorized = json.loads(proc.stdout).get("authorized")
+    except ValueError:
+        authorized = False
+    if not authorized:
+        raise RemindersUnavailable("no access to Reminders; run: remindctl authorize")
 
 
 class RemindersSide:
@@ -15,7 +41,7 @@ class RemindersSide:
     def __init__(self, list_name: str) -> None:
         self.list_name = list_name
         self.list_id: str | None = None
-        self._bin = shutil.which("remindctl") or "/opt/homebrew/bin/remindctl"
+        self._bin = find_remindctl()
 
     def _run(self, *args: str) -> object:
         proc = subprocess.run(
