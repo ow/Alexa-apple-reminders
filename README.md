@@ -10,7 +10,8 @@ This tool lets you use your Alexa devices to add/remove shopping items, but then
 # How it works
 Say "Alexa, add oat milk to my shopping list" and it shows up in Reminders a minute or two later. Tick it off in Reminders at the store and it's ticked off on Alexa too. Add something new via Siri to Reminders, and it appears in Alexa. 
 
-> **Unofficial.** Amazon has no public API for the shopping list anymore, so this uses the same private endpoints as the Alexa app. It can break whenever Amazon changes them. Use at your own risk.
+> [!WARNING]  
+> **Unofficial project.** Amazon has no public API for the shopping list, so this uses the same private endpoints as the Alexa app. It can and will break whenever Amazon changes them, though I'll do my best to keep it up to date. Use at your own risk!
 
 ## Requirements
 
