@@ -10,7 +10,7 @@ jobs:
       id-token: write # PyPI trusted publishing; no API token needed
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: Check tag matches package version
         run: test "v$(uv version --short)" = "${GITHUB_REF_NAME}"
       - run: uv run pytest -q
