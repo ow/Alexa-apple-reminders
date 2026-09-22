@@ -1,0 +1,25 @@
+[project]
+name = "alexa-sync"
+version = "0.1.0"
+description = "Two-way sync between the Alexa shopping list and Apple Reminders"
+readme = "README.md"
+authors = [
+    { name = "Owen Williams", email = "owen@willia.ms" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "aioamazondevices==16.3.0",
+    "keyring>=25.7.0",
+]
+
+[project.scripts]
+alexa-sync = "alexa_sync.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.3,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
