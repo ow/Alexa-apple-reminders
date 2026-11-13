@@ -195,9 +195,67 @@ class LoginFailed(Exception):
     pass
 
 
+def _resolve_relative_login_urls(api: AmazonEchoApi) -> None:
+    """Resolve Amazon form actions against the last response, as a browser does.
+
+    aioamazondevices 16.3 passes relative form actions directly to aiohttp,
+    which rejects them (notably Amazon's /ax/claim sign-in form).
+    This adapter is scoped to the fresh interactive-login API instance.
+    """
+    wrapper = api._http_wrapper
+    request = wrapper.session_request
+    base_url = api.login._session_state_data.retail_site_url
+
+    async def resolved_request(*, url, **kwargs):
+        nonlocal base_url
+        target = URL(url)
+        if not target.is_absolute():
+            target = base_url.join(target)
+        soup, response = await request(url=target, **kwargs)
+        base_url = response.url
+        return soup, response
+
+    wrapper.session_request = resolved_request
+
+
+def _support_staged_amazon_login(api: AmazonEchoApi) -> None:
+    """Handle Amazon's email-first sign-in instead of assuming one password POST."""
+    login = api.login
+
+    async def oauth_login(code_verifier, registration_language="en-US"):
+        url = login._build_oauth_url(code_verifier, login._build_client_id(), registration_language)
+        soup, response = await api._http_wrapper.session_request(method=HTTPMethod.GET, url=url)
+        submitted = set()
+        for _ in range(3):
+            if soup.find("input", id="auth-mfa-otpcode"):
+                return response.url, soup
+            if soup.select_one('#cvf-aamation-challenge-form, input[name="guess"], #auth-captcha-image'):
+                raise LoginFailed("Amazon is asking for a CAPTCHA. Complete its sign-in challenge before retrying; no account security changes are needed.")
+            form = soup.find("form", {"name": "signIn"}) or soup.find("form")
+            password = form.find("input", {"name": "password"}) if form else None
+            # The email-only /ax/claim page includes a hidden autofill hint,
+            # not an actual password step.
+            password_step = password is not None and password.get("id") != "auth-credential-autofill-hint"
+            stage = "password" if password_step else "email"
+            if stage in submitted or not form or (not password_step and not form.find("input", {"name": "email"})):
+                raise LoginFailed("Amazon did not advance to authenticator verification. It may require a browser approval or have rejected the credentials; your 2-Step Verification settings do not need changing.")
+            method, url = login._get_request_from_soup(soup)
+            inputs = login._get_inputs_from_soup(soup)
+            inputs["email"] = login._session_state_data.login_email
+            if password_step:
+                inputs["password"] = login._session_state_data.login_password
+            submitted.add(stage)
+            soup, response = await api._http_wrapper.session_request(method=method, url=url, input_data=inputs)
+        raise LoginFailed("Amazon sign-in required an unsupported extra step; no account settings were changed.")
+
+    login._oauth_login = oauth_login
+
+
 async def interactive_login(email: str, password: str, otp: str, data_dir: str) -> dict[str, Any]:
     async with ClientSession() as session:
         api = make_api(session, email, password, None, data_dir)
+        _resolve_relative_login_urls(api)
+        _support_staged_amazon_login(api)
         try:
             return await api.login.login_mode_interactive(otp)
         except CannotAuthenticate as exc:
